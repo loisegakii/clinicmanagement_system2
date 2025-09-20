@@ -1,0 +1,21 @@
+# ---- Python / Django ----
+__pycache__/
+*.py[cod]
+*.sqlite3
+*.log
+/media/
+staticfiles/
+
+# ---- Node / React ----
+node_modules/
+build/
+dist/
+
+# ---- Virtualenvs ----
+venv/
+.env/
+
+# ---- IDE / OS ----
+.vscode/
+.idea/
+.DS_Store
