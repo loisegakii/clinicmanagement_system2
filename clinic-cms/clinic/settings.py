@@ -1,14 +1,20 @@
+from dotenv import load_dotenv
 from pathlib import Path
 from datetime import timedelta
-
+import os
+import dj_database_url
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = "CHANGE_ME"  # set via environment variable in production
+# Load .env file locally
+load_dotenv()
 
-DEBUG = True
-ALLOWED_HOSTS = []
+# -------------------------------------------------------------------
+# Security
+# -------------------------------------------------------------------
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "fallback-secret-key")
+DEBUG = os.environ.get("DEBUG", "False") == "True"
+ALLOWED_HOSTS = ['afyacare.onrender.com', 'localhost', '127.0.0.1']
 
 # -------------------------------------------------------------------
 # Installed apps
@@ -33,7 +39,6 @@ INSTALLED_APPS = [
     # Local apps
     "accounts",
     "billing",
-    
 ]
 
 # -------------------------------------------------------------------
@@ -48,7 +53,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
-    "corsheaders.middleware.CorsMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",  # for static files on Render
 ]
 
 ROOT_URLCONF = "clinic.urls"
@@ -72,17 +77,12 @@ TEMPLATES = [
 WSGI_APPLICATION = "clinic.wsgi.application"
 
 # -------------------------------------------------------------------
-# Database (PostgreSQL)
+# Database (Render & Local)
 # -------------------------------------------------------------------
 DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": "clinicdb",        #  database name
-        "USER": "postgres",        #  postgres username
-        "PASSWORD": "7075",        #  postgres password
-        "HOST": "127.0.0.1",  
-        "PORT": "5432",            # default postgres port
-    }
+    "default": dj_database_url.config(
+        default=os.environ.get("DATABASE_URL")  # Works both locally & on Render
+    )
 }
 
 # -------------------------------------------------------------------
@@ -106,7 +106,8 @@ USE_TZ = True
 # -------------------------------------------------------------------
 # Static files
 # -------------------------------------------------------------------
-STATIC_URL = "static/"
+STATIC_URL = "/static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # -------------------------------------------------------------------
@@ -129,7 +130,6 @@ REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ),
-    # Allow read/write by authenticated users by default
     "DEFAULT_PERMISSION_CLASSES": (
         "rest_framework.permissions.IsAuthenticated",
     ),
