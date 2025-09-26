@@ -141,32 +141,65 @@ class CreatePharmacistSerializer(serializers.ModelSerializer):
         return user
 
 class AdminCreateUserSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True, min_length=8)
-    SPECIALIZATIONS = ["General Practitioner", "Neurosurgeon", "Pediatrician", "Cardiologist", "Dermatologist", "Other"]
+    password = serializers.CharField(write_only=True)
+    role = serializers.ChoiceField(choices=Roles.choices)
+    specialization = serializers.CharField(required=False, allow_blank=True)
+
+    SPECIALIZATIONS = [
+        "General Practitioner",
+        "Neurosurgeon",
+        "Pediatrician",
+        "Cardiologist",
+        "Dermatologist",
+        "Other",
+    ]
 
     class Meta:
         model = User
-        fields = ["id", "username", "email", "first_name", "last_name", "password", "role", "specialization"]
+        fields = (
+            "id",
+            "username",
+            "email",
+            "first_name",
+            "last_name",
+            "password",
+            "role",
+            "specialization",
+            "date_joined",
+        )
+
+    def validate_specialization(self, value):
+        """
+        Ensure specialization is valid when provided.
+        Strips spaces and checks case-insensitively.
+        """
+        if not value:
+            return ""
+
+        cleaned = value.strip()
+
+        # Case-insensitive match
+        for allowed in self.SPECIALIZATIONS:
+            if cleaned.lower() == allowed.lower():
+                return allowed  # always return canonical form
+
+        raise serializers.ValidationError(
+            f"Invalid specialization. Allowed values: {', '.join(self.SPECIALIZATIONS)}"
+        )
 
     def create(self, validated_data):
+        password = validated_data.pop("password")
         role = validated_data.get("role")
-        if role not in [Roles.ADMIN, Roles.DOCTOR, Roles.NURSE, Roles.RECEPTIONIST, Roles.PHARMACIST, Roles.LAB, Roles.PATIENT]:
-            raise serializers.ValidationError({"role": "Invalid role selected"})
-
         specialization = validated_data.get("specialization", "")
-        if role == Roles.DOCTOR and specialization not in self.SPECIALIZATIONS:
-            raise serializers.ValidationError({"specialization": "Invalid specialization"})
 
-        user = User(
-            username=validated_data["username"],
-            email=validated_data.get("email", ""),
-            first_name=validated_data.get("first_name", ""),
-            last_name=validated_data.get("last_name", ""),
-            specialization=specialization if role == Roles.DOCTOR else "",
-            role=role,
-            is_staff=True if role in [Roles.ADMIN, Roles.DOCTOR] else False,
-        )
-        user.set_password(validated_data["password"])
+        # Require specialization for doctors
+        if role == Roles.DOCTOR and not specialization:
+            raise serializers.ValidationError(
+                {"specialization": "Specialization is required for doctors"}
+            )
+
+        user = User(**validated_data)
+        user.set_password(password)
         user.save()
         return user
 

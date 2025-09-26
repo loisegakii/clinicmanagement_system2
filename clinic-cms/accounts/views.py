@@ -9,6 +9,8 @@ from django.core.exceptions import PermissionDenied
 from django.http import JsonResponse
 from rest_framework.viewsets import ModelViewSet
 from django.utils import timezone
+from datetime import timedelta
+from django.utils import timezone
 import logging
 
 logger = logging.getLogger(__name__)
@@ -109,28 +111,213 @@ class DoctorViewSet(viewsets.ModelViewSet):
         return User.objects.none()
 
     @action(detail=False, methods=["get"], permission_classes=[IsAuthenticated, IsDoctor])
+    def notifications(self, request):
+        """
+        Get notifications for the current doctor
+        """
+        try:
+            # Get pending appointments
+            pending_appointments = Appointment.objects.filter(
+                doctor=request.user,
+                status__in=['REQUESTED', 'PENDING']
+            ).count()
+            
+            # Get lab results ready for review (last 7 days)
+            lab_results = LabResult.objects.filter(
+                patient__assigned_doctor=request.user,
+                created_at__gte=timezone.now() - timedelta(days=7)
+            ).count()
+            
+            # Get completed medical records (last 24 hours)
+            completed_records = MedicalRecord.objects.filter(
+                patient__assigned_doctor=request.user,
+                created_at__gte=timezone.now() - timedelta(days=1)
+            ).count()
+
+            notifications = []
+            
+            if pending_appointments > 0:
+                notifications.append({
+                    "message": f"You have {pending_appointments} pending appointment(s) requiring approval",
+                    "type": "appointment",
+                    "count": pending_appointments
+                })
+                
+            if lab_results > 0:
+                notifications.append({
+                    "message": f"{lab_results} new lab result(s) available for review",
+                    "type": "lab_result", 
+                    "count": lab_results
+                })
+                
+            if completed_records > 0:
+                notifications.append({
+                    "message": f"{completed_records} new medical record(s) created",
+                    "type": "medical_record",
+                    "count": completed_records
+                })
+
+            return Response(notifications)
+            
+        except Exception as e:
+            logger.error(f"Error fetching doctor notifications: {str(e)}")
+            return Response([], status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=["get"], permission_classes=[IsAuthenticated, IsDoctor])
     def patients(self, request):
-        patients = Patient.objects.filter(assigned_doctor=request.user)
-        serializer = DoctorPatientSerializer(patients, many=True)
-        return Response(serializer.data)
+        """
+        Enhanced patients endpoint with comprehensive data
+        """
+        try:
+            patients = Patient.objects.filter(assigned_doctor=request.user).select_related('user')
+            
+            # Add comprehensive patient data
+            patient_data = []
+            for patient in patients:
+                # Calculate age
+                age = None
+                if patient.date_of_birth:
+                    today = timezone.now().date()
+                    age = today.year - patient.date_of_birth.year
+                    if today.month < patient.date_of_birth.month or (
+                        today.month == patient.date_of_birth.month and 
+                        today.day < patient.date_of_birth.day
+                    ):
+                        age -= 1
+                
+                patient_info = {
+                    "id": patient.id,
+                    "name": f"{patient.user.first_name} {patient.user.last_name}".strip(),
+                    "first_name": patient.user.first_name,
+                    "last_name": patient.user.last_name,
+                    "username": patient.user.username,
+                    "email": patient.user.email,
+                    "phone": patient.phone,
+                    "age": age,
+                    "gender": patient.gender,
+                    "status": patient.status,
+                    "date_of_birth": patient.date_of_birth,
+                    "address": patient.address,
+                    "next_of_kin_name": patient.next_of_kin_name,
+                    "next_of_kin_phone": patient.next_of_kin_phone,
+                    "temperature": float(patient.temperature) if patient.temperature else None,
+                    "blood_pressure": patient.blood_pressure,
+                    "heart_rate": patient.heart_rate,
+                    "respiratory_rate": patient.respiratory_rate,
+                    "notes_for_doctor": patient.notes_for_doctor,
+                    "created_at": patient.created_at
+                }
+                patient_data.append(patient_info)
+            
+            return Response(patient_data)
+            
+        except Exception as e:
+            logger.error(f"Error fetching doctor patients: {str(e)}")
+            return Response({"error": "Failed to fetch patients"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @action(detail=False, methods=["get"], permission_classes=[IsAuthenticated, IsDoctor])
     def appointments(self, request):
-        appointments = Appointment.objects.filter(doctor=request.user)
-        serializer = AppointmentSerializer(appointments, many=True)
-        return Response(serializer.data)
+        """
+        Enhanced appointments endpoint with patient details
+        """
+        try:
+            appointments = Appointment.objects.filter(
+                doctor=request.user
+            ).select_related('patient__user').order_by('-created_at')
+            
+            appointment_data = []
+            for appointment in appointments:
+                # Calculate patient age if date of birth exists
+                patient_age = None
+                if appointment.patient.date_of_birth:
+                    today = timezone.now().date()
+                    patient_age = today.year - appointment.patient.date_of_birth.year
+                    if today.month < appointment.patient.date_of_birth.month or (
+                        today.month == appointment.patient.date_of_birth.month and 
+                        today.day < appointment.patient.date_of_birth.day
+                    ):
+                        patient_age -= 1
+
+                appointment_info = {
+                    "id": appointment.id,
+                    "patient_id": appointment.patient.id,
+                    "patient_name": f"{appointment.patient.user.first_name} {appointment.patient.user.last_name}".strip(),
+                    "patient": {
+                        "id": appointment.patient.id,
+                        "name": f"{appointment.patient.user.first_name} {appointment.patient.user.last_name}".strip(),
+                        "phone": appointment.patient.phone,
+                        "age": patient_age
+                    },
+                    "date": appointment.date,
+                    "time": appointment.time,
+                    "status": appointment.status,
+                    "reason": appointment.reason,
+                    "notes": appointment.notes,
+                    "is_emergency": appointment.reason and "emergency" in appointment.reason.lower(),
+                    "created_at": appointment.created_at
+                }
+                appointment_data.append(appointment_info)
+            
+            return Response(appointment_data)
+            
+        except Exception as e:
+            logger.error(f"Error fetching doctor appointments: {str(e)}")
+            return Response({"error": "Failed to fetch appointments"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @action(detail=False, methods=["get"], permission_classes=[IsAuthenticated, IsDoctor])
     def dashboard(self, request):
-        total_patients = Patient.objects.filter(assigned_doctor=request.user).count()
-        total_appointments = Appointment.objects.filter(doctor=request.user).count()
-        total_records = MedicalRecord.objects.filter(patient__assigned_doctor=request.user).count()
-        return Response({
-            "total_patients": total_patients,
-            "total_appointments": total_appointments,
-            "total_records": total_records,
-        })
+        """
+        Enhanced dashboard stats
+        """
+        try:
+            total_patients = Patient.objects.filter(assigned_doctor=request.user).count()
+            
+            total_appointments = Appointment.objects.filter(doctor=request.user).count()
+            pending_appointments = Appointment.objects.filter(
+                doctor=request.user,
+                status__in=['REQUESTED', 'PENDING']
+            ).count()
+            
+            total_records = MedicalRecord.objects.filter(
+                patient__assigned_doctor=request.user
+            ).count()
+            
+            admitted_patients = Patient.objects.filter(
+                assigned_doctor=request.user,
+                status='Admitted'
+            ).count()
+            
+            # Recent consultations (last 30 days)
+            recent_consultations = MedicalRecord.objects.filter(
+                patient__assigned_doctor=request.user,
+                created_at__gte=timezone.now() - timedelta(days=30)
+            ).count()
 
+            return Response({
+                "total_patients": total_patients,
+                "total_appointments": total_appointments,
+                "pending_appointments": pending_appointments,
+                "total_records": total_records,
+                "admitted_patients": admitted_patients,
+                "recent_consultations": recent_consultations,
+                "totalConsultations": recent_consultations,  # For compatibility
+                "pendingAppointments": pending_appointments,  # For compatibility
+                "admittedPatients": admitted_patients  # For compatibility
+            })
+            
+        except Exception as e:
+            logger.error(f"Error fetching dashboard stats: {str(e)}")
+            return Response({
+                "total_patients": 0,
+                "total_appointments": 0,
+                "pending_appointments": 0,
+                "total_records": 0,
+                "admitted_patients": 0,
+                "recent_consultations": 0,
+                "totalConsultations": 0,
+                "pendingAppointments": 0,
+                "admittedPatients": 0
+            }, status=status.HTTP_200_OK)
 # =========================================================
 # NURSE DASHBOARD VIEWSETS (FULL CRUD)
 # =========================================================
@@ -264,7 +451,6 @@ class AlertViewSet(viewsets.ModelViewSet):
 class HandoverLogViewSet(viewsets.ModelViewSet):
     queryset = HandoverLog.objects.all().order_by("-created_at")
     serializer_class = HandoverLogSerializer
-    permission_classes = [IsAuthenticated]
 
 # =========================================================
 # APPOINTMENTS - FIXED VERSION
@@ -343,6 +529,119 @@ class AppointmentViewSet(viewsets.ModelViewSet):
             logger.error(f"Error in AppointmentViewSet.perform_create: {str(e)}")
             raise
 
+    @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated, IsDoctor])
+    def approve(self, request, pk=None):
+        """
+        Approve an appointment (doctor only)
+        """
+        try:
+            appointment = self.get_object()
+            
+            # Check if the appointment belongs to the requesting doctor
+            if appointment.doctor != request.user:
+                return Response(
+                    {"error": "You can only approve your own appointments"}, 
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
+            # Check if appointment is in a state that can be approved
+            if appointment.status not in ['REQUESTED', 'PENDING']:
+                return Response(
+                    {"error": f"Cannot approve appointment with status: {appointment.status}"}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            appointment.status = 'ACCEPTED'
+            appointment.save()
+            
+            serializer = self.get_serializer(appointment)
+            return Response({
+                "message": "Appointment approved successfully",
+                "appointment": serializer.data
+            })
+            
+        except Exception as e:
+            logger.error(f"Error approving appointment: {str(e)}")
+            return Response(
+                {"error": "Failed to approve appointment"}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated, IsDoctor])
+    def decline(self, request, pk=None):
+        """
+        Decline an appointment (doctor only)
+        """
+        try:
+            appointment = self.get_object()
+            
+            # Check if the appointment belongs to the requesting doctor
+            if appointment.doctor != request.user:
+                return Response(
+                    {"error": "You can only decline your own appointments"}, 
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
+            # Check if appointment is in a state that can be declined
+            if appointment.status not in ['REQUESTED', 'PENDING']:
+                return Response(
+                    {"error": f"Cannot decline appointment with status: {appointment.status}"}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            appointment.status = 'DECLINED'
+            appointment.save()
+            
+            serializer = self.get_serializer(appointment)
+            return Response({
+                "message": "Appointment declined successfully",
+                "appointment": serializer.data
+            })
+            
+        except Exception as e:
+            logger.error(f"Error declining appointment: {str(e)}")
+            return Response(
+                {"error": "Failed to decline appointment"}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated, IsDoctor])
+    def complete(self, request, pk=None):
+        """
+        Mark appointment as completed (doctor only)
+        """
+        try:
+            appointment = self.get_object()
+            
+            # Check if the appointment belongs to the requesting doctor
+            if appointment.doctor != request.user:
+                return Response(
+                    {"error": "You can only complete your own appointments"}, 
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
+            # Check if appointment can be completed
+            if appointment.status not in ['ACCEPTED', 'APPROVED']:
+                return Response(
+                    {"error": f"Cannot complete appointment with status: {appointment.status}"}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            appointment.status = 'COMPLETED'
+            appointment.save()
+            
+            serializer = self.get_serializer(appointment)
+            return Response({
+                "message": "Appointment completed successfully",
+                "appointment": serializer.data
+            })
+            
+        except Exception as e:
+            logger.error(f"Error completing appointment: {str(e)}")
+            return Response(
+                {"error": "Failed to complete appointment"}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 # =========================================================
 # MEDICAL RECORDS
 # =========================================================
@@ -538,37 +837,17 @@ class UserSettingsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        try:
-            settings = request.user.settings
-            serializer = UserSettingsSerializer(settings)
-            return Response(serializer.data)
-        except AttributeError:
-            # User doesn't have settings yet, create default ones
-            from .models import UserSettings
-            settings = UserSettings.objects.create(user=request.user)
-            serializer = UserSettingsSerializer(settings)
-            return Response(serializer.data)
+        serializer = UserSettingsSerializer(request.user)
+        return Response(serializer.data)
 
     def put(self, request):
-        try:
-            settings = request.user.settings
-        except AttributeError:
-            from .models import UserSettings
-            settings = UserSettings.objects.create(user=request.user)
-            
-        serializer = UserSettingsSerializer(settings, data=request.data)
+        serializer = UserSettingsSerializer(request.user, data=request.data)
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response({"message": "Settings updated successfully!", "settings": serializer.data})
 
     def patch(self, request):
-        try:
-            settings = request.user.settings
-        except AttributeError:
-            from .models import UserSettings
-            settings = UserSettings.objects.create(user=request.user)
-            
-        serializer = UserSettingsSerializer(settings, data=request.data, partial=True)
+        serializer = UserSettingsSerializer(request.user, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response({"message": "Settings updated successfully!", "settings": serializer.data})
