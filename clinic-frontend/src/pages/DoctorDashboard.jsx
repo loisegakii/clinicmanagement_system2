@@ -1,6 +1,6 @@
 // src/pages/DoctorDashboard.jsx
 import React, { useEffect, useState } from "react";
-import API from "../api/axios"; // your configured axios instance (baseURL should point to /api/)
+import API from "../api/axios"; // configured axios instance (baseURL should point to /api/)
 import {
   FaUserMd,
   FaSignOutAlt,

@@ -1,6 +1,6 @@
 // src/pages/Login.jsx
 import { useState } from "react";
-import { useAuth } from "../context/AuthContext"; // ✅ use context for login
+import { useAuth } from "../context/AuthContext"; // use context for login
 
 function Login() {
   const { login } = useAuth();
@@ -16,7 +16,7 @@ function Login() {
     setLoading(true);
 
     try {
-      // ✅ delegate to AuthContext
+      //  delegate to AuthContext
       await login(username, password);
       // no need to navigate here, AuthContext handles redirects by role
     } catch (err) {

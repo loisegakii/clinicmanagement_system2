@@ -65,7 +65,7 @@ API.interceptors.response.use(
       }
     }
 
-    return Promise.reject(error); // 🔑 always propagate error
+    return Promise.reject(error); // always propagate error
   }
 );
 

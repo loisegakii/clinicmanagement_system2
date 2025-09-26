@@ -1,9 +1,9 @@
 // src/context/AuthContext.jsx
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import API from "../api/axios.js";
 
-const AuthContext = createContext();
+const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(() => {
@@ -13,9 +13,18 @@ export const AuthProvider = ({ children }) => {
       return null;
     }
   });
-
   const [token, setToken] = useState(() => localStorage.getItem("access_token") || null);
+
   const navigate = useNavigate();
+
+  // -----------------------------
+  // Safe navigate to avoid repeated redirects
+  // -----------------------------
+  const safeNavigate = (path) => {
+    if (window.location.pathname !== path) {
+      navigate(path);
+    }
+  };
 
   // -----------------------------
   // Normalize user role safely
@@ -26,63 +35,65 @@ export const AuthProvider = ({ children }) => {
   });
 
   // -----------------------------
+  // Refresh access token helper
+  // -----------------------------
+  const refreshAccessToken = async () => {
+    try {
+      const refreshToken = localStorage.getItem("refresh_token");
+      if (!refreshToken) throw new Error("No refresh token");
+
+      const res = await API.post("auth/token/refresh/", { refresh: refreshToken });
+      const newAccess = res.data.access;
+
+      if (!newAccess) throw new Error("No access token returned");
+
+      localStorage.setItem("access_token", newAccess);
+      setToken(newAccess);
+      API.defaults.headers.common["Authorization"] = `Bearer ${newAccess}`;
+
+      return newAccess;
+    } catch (err) {
+      console.error("❌ Token refresh failed:", err.response?.data || err.message);
+      logout();
+      return null;
+    }
+  };
+
+  // -----------------------------
   // Login
   // -----------------------------
   const login = async (username, password) => {
-  try {
-    // 🔄 Always reset storage & axios headers before login
-    localStorage.clear();
-    delete API.defaults.headers.common["Authorization"];
+    try {
+      // Reset storage and headers
+      localStorage.clear();
+      delete API.defaults.headers.common["Authorization"];
 
-    const res = await API.post("auth/token/", { username, password });
-    const access = res.data.access;
-    const refresh = res.data.refresh;
+      const res = await API.post("auth/token/", { username, password });
+      const { access, refresh } = res.data;
 
-    setToken(access);
-    localStorage.setItem("access_token", access);
-    localStorage.setItem("refresh_token", refresh);
+      setToken(access);
+      localStorage.setItem("access_token", access);
+      localStorage.setItem("refresh_token", refresh);
+      API.defaults.headers.common["Authorization"] = `Bearer ${access}`;
 
-    API.defaults.headers.common["Authorization"] = `Bearer ${access}`;
+      // Fetch user profile
+      const me = await API.get("me/");
+      const normalized = mapUserRole(me.data);
 
-    const me = await API.get("me/");
-    const normalized = mapUserRole(me.data);
+      setUser(normalized);
+      localStorage.setItem("user", JSON.stringify(normalized));
 
-    setUser(normalized);
-    localStorage.setItem("user", JSON.stringify(normalized));
+      // Navigate safely
+      navigateBasedOnRole(normalized.role);
 
-    // 🚀 Redirect based on role
-    switch (normalized.role) {
-      case "ADMIN":
-        navigate("/admin-dashboard");
-        break;
-      case "DOCTOR":
-        navigate("/doctor-dashboard");
-        break;
-      case "RECEPTIONIST":
-        navigate("/receptionist-dashboard");
-        break;
-      case "PHARMACIST":
-        navigate("/pharmacist-dashboard");
-        break;
-      case "LAB":
-        navigate("/lab-dashboard");
-        break;
-      case "PATIENT":
-        navigate("/patient-dashboard");
-        break;
-      default:
-        navigate("/login");
+      return normalized;
+    } catch (err) {
+      console.error("❌ Login failed:", err.response?.data || err.message);
+      throw new Error(
+        err.response?.data?.detail || "Login failed. Check credentials or server connection."
+      );
     }
-
-    return normalized;
-  } catch (err) {
-    console.error("❌ Login failed:", err.response?.data || err.message);
-    throw new Error(
-      err.response?.data?.detail || "Login failed. Check credentials or server connection."
-    );
-  }
-};
-
+  };
 
   // -----------------------------
   // Logout
@@ -90,8 +101,40 @@ export const AuthProvider = ({ children }) => {
   const logout = () => {
     setUser(null);
     setToken(null);
-    localStorage.clear(); // ✅ clear everything
-    navigate("/login");
+    localStorage.clear();
+    delete API.defaults.headers.common["Authorization"];
+    safeNavigate("/login"); // ✅ safe navigate
+  };
+
+  // -----------------------------
+  // Navigate based on role
+  // -----------------------------
+  const navigateBasedOnRole = (role) => {
+    switch (role) {
+      case "ADMIN":
+        safeNavigate("/admin-dashboard");
+        break;
+      case "DOCTOR":
+        safeNavigate("/doctor-dashboard");
+        break;
+      case "NURSE":
+        safeNavigate("/nurse-dashboard");
+        break;
+      case "RECEPTIONIST":
+        safeNavigate("/receptionist-dashboard");
+        break;
+      case "PHARMACIST":
+        safeNavigate("/pharmacist-dashboard");
+        break;
+      case "LAB":
+        safeNavigate("/lab-dashboard");
+        break;
+      case "PATIENT":
+        safeNavigate("/patient-dashboard");
+        break;
+      default:
+        safeNavigate("/login");
+    }
   };
 
   // -----------------------------
@@ -101,26 +144,29 @@ export const AuthProvider = ({ children }) => {
     const fetchUser = async () => {
       if (token && !user) {
         try {
-          const me = await API.get("me/", {
-            headers: { Authorization: `Bearer ${token}` },
-          });
+          API.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+          const me = await API.get("me/");
           const normalized = mapUserRole(me.data);
           setUser(normalized);
           localStorage.setItem("user", JSON.stringify(normalized));
-        } catch (err) {
-          console.warn("⚠️ Invalid/expired token, logging out");
-          logout();
+        } catch {
+          const newToken = await refreshAccessToken();
+          if (newToken) {
+            const me = await API.get("me/");
+            const normalized = mapUserRole(me.data);
+            setUser(normalized);
+            localStorage.setItem("user", JSON.stringify(normalized));
+          }
         }
       }
     };
     fetchUser();
-  }, [token, user]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
 
-  return (
-    <AuthContext.Provider value={{ user, token, login, logout }}>
-      {children}
-    </AuthContext.Provider>
-  );
+  const value = useMemo(() => ({ user, token, login, logout }), [user, token]);
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
 // -----------------------------
