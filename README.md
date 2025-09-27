@@ -39,7 +39,7 @@ cd clinic-frontend
 npm install
 **Start development server:**
 npm start
-Frontend will run at http://localhost:3000
+Frontend will run at http://localhost:5173
 ## API Authentication
 
 **Obtain JWT token:**
