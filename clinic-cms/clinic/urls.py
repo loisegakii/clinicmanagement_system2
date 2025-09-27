@@ -3,6 +3,7 @@ from django.urls import path, include
 from django.http import HttpResponse
 from django.shortcuts import redirect
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
+from django.contrib.staticfiles.urls import staticfiles_urlpatterns
 
 # Simple homepage view
 def home(request):
@@ -28,3 +29,6 @@ urlpatterns = [
     # JWT authentication routes
     path('api/auth/', include('accounts.jwt_urls')),
 ]
+
+# Serve static files in development
+urlpatterns += staticfiles_urlpatterns()    
