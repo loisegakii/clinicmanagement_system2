@@ -142,31 +142,31 @@ const DoctorDashboard = () => {
     }
   };
 
-  // View patient details with comprehensive information
+  // Update the viewPatientDetails function to handle API errors better
   const viewPatientDetails = async (patient) => {
     setLoading(true);
     try {
       // Fetch comprehensive patient data from all sources
-      const [
-        patientRes,
-        medicalRecordsRes,
-        labResultsRes,
-        prescriptionsRes,
-        appointmentsRes
-      ] = await Promise.all([
+      const requests = [
         API.get(`patients/${patient.id}/`),
         API.get(`medical-records/?patient=${patient.id}`),
         API.get(`lab-results/?patient=${patient.id}`),
-        API.get(`prescriptions/?patient=${patient.id}`),
-        API.get(`appointments/?patient=${patient.id}`)
-      ]);
+        API.get(`prescriptions/?patient=${patient.id}`)
+      ];
+
+      const [patientRes, medicalRecordsRes, labResultsRes, prescriptionsRes] = await Promise.allSettled(requests);
+
+      // Handle responses even if some fail
+      const patientData = patientRes.status === 'fulfilled' ? patientRes.value.data : patient;
+      const medicalRecords = medicalRecordsRes.status === 'fulfilled' ? medicalRecordsRes.value.data : [];
+      const labResults = labResultsRes.status === 'fulfilled' ? labResultsRes.value.data : [];
+      const prescriptions = prescriptionsRes.status === 'fulfilled' ? prescriptionsRes.value.data : [];
 
       setPatientDetails({
-        ...patientRes.data,
-        medicalRecords: medicalRecordsRes.data || [],
-        labResults: labResultsRes.data || [],
-        prescriptions: prescriptionsRes.data || [],
-        appointments: appointmentsRes.data || []
+        ...patientData,
+        medicalRecords: Array.isArray(medicalRecords) ? medicalRecords : [],
+        labResults: Array.isArray(labResults) ? labResults : [],
+        prescriptions: Array.isArray(prescriptions) ? prescriptions : []
       });
       setSelectedPatient(patient);
     } catch (err) {
@@ -177,115 +177,149 @@ const DoctorDashboard = () => {
     }
   };
 
-  // Handle appointment approval
-const handleApproveAppointment = async (appointment) => {
-  try {
-    setLoading(true);
-    
-    // Use the new approve endpoint
-    await API.patch(`appointments/${appointment.id}/approve/`);
-    
-    // Update local state immediately for better UX
-    setAppointments(prev => 
-      prev.map(a => 
-        a.id === appointment.id 
-          ? { ...a, status: "ACCEPTED" } 
-          : a
-      )
-    );
-    
-    toast.success("Appointment approved successfully");
-    
-    // Refresh data to get latest from server
-    await Promise.all([fetchAppointments(), fetchStats()]);
-    
-  } catch (err) {
-    console.error("Error approving appointment:", err);
-    toast.error("Failed to approve appointment");
-  } finally {
-    setLoading(false);
-  }
-};
+  // Fixed handleApproveAppointment function
+  const handleApproveAppointment = async (appointment) => {
+    try {
+      setLoading(true);
+      
+      // Use the approve endpoint
+      const response = await API.patch(`appointments/${appointment.id}/approve/`);
+      
+      // Update local state immediately for better UX
+      setAppointments(prev => 
+        prev.map(a => 
+          a.id === appointment.id 
+            ? { ...a, status: "ACCEPTED" } 
+            : a
+        )
+      );
+      
+      toast.success("Appointment approved successfully");
+      
+      // Refresh data to get latest from server
+      await Promise.all([fetchAppointments(), fetchStats()]);
+      
+    } catch (err) {
+      console.error("Error approving appointment:", err);
+      toast.error(err.response?.data?.error || "Failed to approve appointment");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-// Replace the existing handleDeclineAppointment function  
-const handleDeclineAppointment = async (appointment) => {
-  if (!window.confirm("Are you sure you want to decline this appointment?")) return;
-  
-  try {
-    setLoading(true);
+  // Fixed handleDeclineAppointment function  
+  const handleDeclineAppointment = async (appointment) => {
+    if (!window.confirm("Are you sure you want to decline this appointment?")) return;
     
-    // Use the new decline endpoint
-    await API.patch(`appointments/${appointment.id}/decline/`);
-    
-    // Update local state
-    setAppointments(prev => 
-      prev.map(a => 
-        a.id === appointment.id 
-          ? { ...a, status: "DECLINED" } 
-          : a
-      )
-    );
-    
-    toast.success("Appointment declined");
-    
-    // Refresh data
-    await Promise.all([fetchAppointments(), fetchStats()]);
-    
-  } catch (err) {
-    console.error("Error declining appointment:", err);
-    toast.error("Failed to decline appointment");
-  } finally {
-    setLoading(false);
-  }
-};
+    try {
+      setLoading(true);
+      
+      // Use the decline endpoint
+      const response = await API.patch(`appointments/${appointment.id}/decline/`);
+      
+      // Update local state
+      setAppointments(prev => 
+        prev.map(a => 
+          a.id === appointment.id 
+            ? { ...a, status: "DECLINED" } 
+            : a
+        )
+      );
+      
+      toast.success("Appointment declined");
+      
+      // Refresh data
+      await Promise.all([fetchAppointments(), fetchStats()]);
+      
+    } catch (err) {
+      console.error("Error declining appointment:", err);
+      toast.error(err.response?.data?.error || "Failed to decline appointment");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-// Update the handleSaveConsultation function to complete the appointment
-const handleSaveConsultation = async (e) => {
-  e.preventDefault();
-  
-  if (!selectedPatient || !consultAppointment) {
-    toast.error("Missing patient or appointment information");
-    return;
-  }
-
-  try {
-    setLoading(true);
-
-    // Create medical record
-    const medicalRecordPayload = {
-      patient: selectedPatient.id,
-      appointment: consultAppointment.id,
-      diagnosis: consultForm.diagnosis,
-      notes: JSON.stringify({
-        prescriptions: consultForm.prescriptions,
-        lab_requests: consultForm.lab_requests,
-        admission_required: consultForm.admission_required,
-        follow_up_date: consultForm.follow_up_date,
-        consultation_notes: consultForm.notes,
-      }),
+  // Fixed startConsultation function
+  const startConsultation = (appointment) => {
+    // Find the patient for this appointment
+    const appointmentPatient = {
+      id: appointment.patient_id || appointment.patient?.id,
+      name: appointment.patient_name || appointment.patient?.name,
+      first_name: appointment.patient?.first_name || "",
+      last_name: appointment.patient?.last_name || ""
     };
 
-    await API.post("medical-records/", medicalRecordPayload);
-
-    // Complete the appointment using the new endpoint
-    await API.patch(`appointments/${consultAppointment.id}/complete/`);
-
-    // Close modal and refresh data
-    setConsultModalOpen(false);
-    setConsultAppointment(null);
-    setSelectedPatient(null);
+    setSelectedPatient(appointmentPatient);
+    setConsultAppointment(appointment);
     
-    await reloadAll();
-    toast.success("Consultation saved and appointment completed successfully");
-  } catch (err) {
-    console.error("Error saving consultation:", err);
-    toast.error("Failed to save consultation");
-  } finally {
-    setLoading(false);
-  }
-};
+    // Reset consultation form
+    setConsultForm({
+      diagnosis: "",
+      notes: "",
+      prescriptions: [{ drug: "", dosage: "", frequency: "", duration: "" }],
+      lab_requests: [""],
+      admission_required: false,
+      follow_up_date: "",
+    });
+    
+    setConsultModalOpen(true);
+  };
 
-  // Prescription management
+  // Fixed handleSaveConsultation function
+  const handleSaveConsultation = async (e) => {
+    e.preventDefault();
+    
+    if (!selectedPatient || !consultAppointment) {
+      toast.error("Missing patient or appointment information");
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      // Create medical record
+      const medicalRecordPayload = {
+        patient: selectedPatient.id,
+        appointment: consultAppointment.id,
+        diagnosis: consultForm.diagnosis,
+        notes: JSON.stringify({
+          prescriptions: consultForm.prescriptions.filter(p => p.drug.trim()),
+          lab_requests: consultForm.lab_requests.filter(req => req.trim()),
+          admission_required: consultForm.admission_required,
+          follow_up_date: consultForm.follow_up_date,
+          consultation_notes: consultForm.notes,
+        }),
+      };
+
+      await API.post("medical-records/", medicalRecordPayload);
+
+      // Complete the appointment using the complete endpoint
+      await API.patch(`appointments/${consultAppointment.id}/complete/`);
+
+      // Close modal and refresh data
+      setConsultModalOpen(false);
+      setConsultAppointment(null);
+      setSelectedPatient(null);
+      
+      await reloadAll();
+      toast.success("Consultation saved and appointment completed successfully");
+    } catch (err) {
+      console.error("Error saving consultation:", err);
+      toast.error(err.response?.data?.error || "Failed to save consultation");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Prescription management - Fixed updatePrescriptionField function
+  const updatePrescriptionField = (index, field, value) => {
+    setConsultForm(prev => {
+      const newPrescriptions = [...prev.prescriptions];
+      newPrescriptions[index] = { ...newPrescriptions[index], [field]: value };
+      return { ...prev, prescriptions: newPrescriptions };
+    });
+  };
+
   const addPrescriptionRow = () => {
     setConsultForm(prev => ({
       ...prev,
@@ -294,18 +328,12 @@ const handleSaveConsultation = async (e) => {
   };
 
   const removePrescriptionRow = (index) => {
-    setConsultForm(prev => ({
-      ...prev,
-      prescriptions: prev.prescriptions.filter((_, i) => i !== index)
-    }));
-  };
-
-  const updatePrescriptionField = (index, field, value) => {
-    setConsultForm(prev => {
-      const newPrescriptions = [...prev.prescriptions];
-      newPrescriptions[index] = { ...newPrescriptions[index], [field]: value };
-      return { ...prev, prescriptions: newPrescriptions };
-    });
+    if (consultForm.prescriptions.length > 1) {
+      setConsultForm(prev => ({
+        ...prev,
+        prescriptions: prev.prescriptions.filter((_, i) => i !== index)
+      }));
+    }
   };
 
   // Lab requests management
@@ -317,10 +345,12 @@ const handleSaveConsultation = async (e) => {
   };
 
   const removeLabRow = (index) => {
-    setConsultForm(prev => ({
-      ...prev,
-      lab_requests: prev.lab_requests.filter((_, i) => i !== index)
-    }));
+    if (consultForm.lab_requests.length > 1) {
+      setConsultForm(prev => ({
+        ...prev,
+        lab_requests: prev.lab_requests.filter((_, i) => i !== index)
+      }));
+    }
   };
 
   const updateLabField = (index, value) => {
@@ -341,12 +371,14 @@ const handleSaveConsultation = async (e) => {
           <button
             onClick={() => handleApproveAppointment(appointment)}
             className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 flex items-center gap-1"
+            disabled={loading}
           >
             <FaCheck size={12} /> Approve
           </button>
           <button
             onClick={() => handleDeclineAppointment(appointment)}
             className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 flex items-center gap-1"
+            disabled={loading}
           >
             <FaTimes size={12} /> Decline
           </button>

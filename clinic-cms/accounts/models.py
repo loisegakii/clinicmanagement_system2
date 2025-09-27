@@ -65,11 +65,7 @@ class User(AbstractUser):
             return f"Dr. {self.get_full_name()} - {self.get_specialization_display()}"
         return f"{self.username} ({self.role})"
 
-# -----------------------------
-# Patient Profile model
-# -----------------------------
 class Patient(models.Model):
-    
     GENDER_CHOICES = [
         ('M', 'Male'),
         ('F', 'Female'),
@@ -90,10 +86,10 @@ class Patient(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='patient_profile')
     date_of_birth = models.DateField(default=date(2000, 1, 1))
     gender = models.CharField(max_length=1, choices=GENDER_CHOICES)
-    phone = models.CharField(max_length=15, blank=True)
-    address = models.TextField(blank=True)
-    next_of_kin_name = models.CharField(max_length=100, blank=True)
-    next_of_kin_phone = models.CharField(max_length=15, blank=True)
+    phone = models.CharField(max_length=15, default="", blank=True)
+    address = models.TextField(default="", blank=True)
+    next_of_kin_name = models.CharField(max_length=100, default="", blank=True)
+    next_of_kin_phone = models.CharField(max_length=15, default="", blank=True)
     notes_for_doctor = models.TextField(default="", blank=True)
     assigned_doctor = models.ForeignKey(
         User, 
@@ -104,37 +100,22 @@ class Patient(models.Model):
     )
     
     # Vitals
-    temperature = models.FloatField(null=True, blank=True, help_text="Temperature in Celsius")
-    blood_pressure = models.CharField(max_length=20, blank=True, help_text="e.g., 120/80")
+    temperature = models.DecimalField(max_digits=4, decimal_places=1, null=True, blank=True)
+    blood_pressure = models.CharField(max_length=20, default="", blank=True, help_text="e.g., 120/80")
     heart_rate = models.IntegerField(null=True, blank=True, help_text="Beats per minute")
     respiratory_rate = models.IntegerField(null=True, blank=True, help_text="Breaths per minute")
     
-    # Status
+    # Status & reason
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Pending')
+    reason = models.TextField(default="No reason provided")
     
+    # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return f"{self.user.first_name} {self.user.last_name}"
+        return f"{self.user.get_full_name()} ({self.status})"
 
-    # -----------------------------
-    # Vitals fields for nurse updates
-    # -----------------------------
-    temperature = models.DecimalField(max_digits=4, decimal_places=1, null=True, blank=True)
-    blood_pressure = models.CharField(max_length=20, blank=True)
-    heart_rate = models.IntegerField(null=True, blank=True)
-    respiratory_rate = models.IntegerField(null=True, blank=True)
-
-    status = models.CharField(
-        max_length=20,
-        choices=STATUS_CHOICES,
-        default=STATUS_ACTIVE,
-    )
-
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    def __str__(self):
-        return f"Patient: {self.user.get_full_name()} ({self.status})"
 
 # -----------------------------
 # Appointment model
@@ -156,7 +137,7 @@ class Appointment(models.Model):
     date = models.DateField()
     time = models.TimeField()
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='REQUESTED')
-    reason = models.TextField(blank=True) 
+    reason = models.TextField(default="No reason provided", blank=True)
     notes = models.TextField(default="", blank=True)
     requested_by_patient = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -187,9 +168,9 @@ class MedicalRecord(models.Model):
         related_name="created_medical_records",
         limit_choices_to={"role__in": [Roles.DOCTOR, Roles.NURSE, Roles.LAB]},
     )
-    symptoms = models.TextField(blank=True)
+    symptoms = models.TextField(default="", blank=True)
     diagnosis = models.TextField(blank=True)
-    notes = models.TextField(blank=True, help_text="Additional notes from staff")
+    notes = models.TextField(default="", blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

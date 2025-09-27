@@ -13,7 +13,7 @@ API.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   } else {
-    delete config.headers.Authorization; // 🔑 avoid stale token
+    delete config.headers.Authorization; //  avoid stale token
   }
   return config;
 });

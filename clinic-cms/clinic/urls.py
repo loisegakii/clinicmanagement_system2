@@ -1,8 +1,20 @@
 from django.contrib import admin
 from django.urls import path, include
+from django.http import HttpResponse
+from django.shortcuts import redirect
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
+# Simple homepage view
+def home(request):
+    # Option 1: show text
+    # return HttpResponse("Welcome to Clinic CMS API!")
+
+    # Option 2: redirect to Swagger docs
+    return redirect('/api/docs/')
+
 urlpatterns = [
+    path('', home),  # root path
+
     path('admin/', admin.site.urls),
     
     # API schema and docs

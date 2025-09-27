@@ -47,15 +47,8 @@ class IsDoctor(BasePermission):
 # Nurse permissions
 # =========================================================
 class IsNurse(BasePermission):
-    """
-    Allows access only to users with the NURSE role.
-    """
     def has_permission(self, request, view):
-        return (
-            request.user
-            and request.user.is_authenticated
-            and request.user.role == Roles.NURSE
-        )
+        return request.user.is_authenticated and request.user.role == Roles.NURSE
 
 # =========================================================
 # Receptionist permissions

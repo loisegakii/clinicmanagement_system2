@@ -16,6 +16,7 @@ import {
 
 function ReceptionistDashboard() {
   const [patients, setPatients] = useState([]);
+  const [doctors, setDoctors] = useState([]); 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -33,6 +34,7 @@ function ReceptionistDashboard() {
     date_of_birth: "",
     next_of_kin_name: "",
     next_of_kin_phone: "",
+    assigned_doctor: "",
   });
 
   const { logout } = useAuth();
@@ -41,6 +43,18 @@ function ReceptionistDashboard() {
   const handleLogout = () => {
     logout();
     navigate("/login");
+  };
+
+   // ==========================
+  // Fetch doctors
+  // ==========================
+  const fetchDoctors = async () => {
+    try {
+      const res = await API.get("/doctors/");
+      setDoctors(Array.isArray(res.data) ? res.data : res.data.results || []);
+    } catch (err) {
+      console.error("Failed to load doctors:", err);
+    }
   };
 
   // ==========================
@@ -59,10 +73,11 @@ function ReceptionistDashboard() {
 
   useEffect(() => {
     fetchPatients();
+    fetchDoctors(); // Make sure to fetch doctors on load
   }, []);
 
   // ==========================
-  // Add patient
+  // Add patient with doctor assignment
   // ==========================
   const handleAddPatient = async (e) => {
     e.preventDefault();
@@ -70,9 +85,31 @@ function ReceptionistDashboard() {
 
     try {
       const payload = { ...newPatient };
+      
+      // Create the patient first
       const res = await API.post("/patients/", payload);
-      setPatients((prev) => [res.data, ...prev]);
+      
+      // If a doctor is assigned, update the patient
+      if (newPatient.assigned_doctor) {
+        await API.patch(`/patients/${res.data.id}/`, {
+          assigned_doctor: newPatient.assigned_doctor
+        });
+      }
 
+       // Update the patient object with the assigned doctor info
+          const updatedPatient = {
+            ...res.data,
+            assigned_doctor: newPatient.assigned_doctor
+          };
+          
+          setPatients((prev) => [updatedPatient, ...prev]);
+        } catch (assignmentErr) {
+          console.error("Error assigning doctor:", assignmentErr);
+          // Still add the patient even if doctor assignment fails
+          setPatients((prev) => [res.data, ...prev]);
+          toast.warning("Patient created but doctor assignment failed. Please assign manually.");
+        }
+        
       setNewPatient({
         first_name: "",
         last_name: "",
@@ -85,11 +122,15 @@ function ReceptionistDashboard() {
         date_of_birth: "",
         next_of_kin_name: "",
         next_of_kin_phone: "",
+        assigned_doctor: "",
       });
 
-      toast.success("✅ Patient added successfully!");
-    } catch (err) {
-      toast.error("❌ Failed to create patient.");
+      toast.success("Patient added successfully!");
+    try {
+      
+    } catch (error) {
+      console.error("Error creating patient:", err);
+      toast.error("Failed to create patient.");
     }
   };
 
@@ -101,6 +142,12 @@ function ReceptionistDashboard() {
     if (file) {
       setProfilePic(URL.createObjectURL(file));
     }
+  };
+
+   // Get doctor name helper
+  const getDoctorName = (doctorId) => {
+    const doctor = doctors.find(d => d.id === parseInt(doctorId));
+    return doctor ? `Dr. ${doctor.first_name} ${doctor.last_name}` : 'Unassigned';
   };
 
   // ==========================

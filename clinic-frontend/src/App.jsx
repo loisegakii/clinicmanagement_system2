@@ -59,7 +59,7 @@ function App() {
         <Routes>
           {/* Public routes */}
           <Route path="/" element={<HomeRedirect />} />
-          <Route path="/login" element={<Login />} /> {/* ✅ added dedicated /login route */}
+          <Route path="/login" element={<Login />} /> {/* added dedicated /login route */}
 
           {/* Role-based dashboards */}
           <Route path="/admin-dashboard" element={<ProtectedRoute role="ADMIN"><AdminDashboard /></ProtectedRoute>} />
