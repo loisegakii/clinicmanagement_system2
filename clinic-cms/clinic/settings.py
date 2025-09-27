@@ -1,7 +1,7 @@
 from pathlib import Path
 from datetime import timedelta
-
-
+import dj_database_url
+from decouple import config
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # SECURITY WARNING: keep the secret key used in production secret!
@@ -72,17 +72,20 @@ WSGI_APPLICATION = "clinic.wsgi.application"
 # -------------------------------------------------------------------
 # Database (PostgreSQL)
 # -------------------------------------------------------------------
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": "clinicdb",        #  database name
-        "USER": "postgres",        #  postgres username
-        "PASSWORD": "7075",        #  postgres password
-        "HOST": "127.0.0.1",  
-        "PORT": "5432",            # default postgres port
-    }
-}
+# DATABASES = {
+#     "default": {
+#         "ENGINE": "django.db.backends.postgresql",
+#         "NAME": "clinicdb",        #  database name
+#         "USER": "postgres",        #  postgres username
+#         "PASSWORD": "7075",        #  postgres password
+#         "HOST": "127.0.0.1",  
+#         "PORT": "5432",            # default postgres port
+#     }
+# }
 
+DATABASES = {
+    "default": dj_database_url.parse(config("DATABASE_URL"))
+}
 # -------------------------------------------------------------------
 # Password validation
 # -------------------------------------------------------------------
@@ -97,7 +100,7 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # -------------------------------------------------------------------
 LANGUAGE_CODE = "en-us"
-TIME_ZONE = "UTC"
+TIME_ZONE = "Africa/Nairobi"
 USE_I18N = True
 USE_TZ = True
 
